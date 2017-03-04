@@ -9,34 +9,52 @@ import bisect
 import bs4
 from bs4 import BeautifulSoup
 import urllib2
+import urllib
 import string
 import requests
 import random
 
-class Stock:
-    'Common base class for all stocks'
-    stock_count = 0
+csv.register_dialect(
+    'mydialect',
+    delimiter = ',',
+    quotechar = '"',
+    doublequote = True,
+    skipinitialspace = True,
+    lineterminator = '\r\n',
+    quoting = csv.QUOTE_MINIMAL)
 
+class Stock:
     def __init__(self, symbol, company):
         self.symbol = symbol
         self.company = company
         self.data = []
-        Stock.stock_count += 1
 
     def query_stock_symbol(self):
-        # add wait times in between getting each player's data to prevent overload
+        # Add wait times in between getting each player's data to prevent overload
         wait_time = round(max(5, 10 + random.gauss(0,3)), 2)
         time.sleep(wait_time)
 
-        #create a new beautiful soup object that can query the ticker symbol from barron's
-        stock_link = 'http://www.barrons.com/quote/stock/us/xnas/%s' % (self.symbol)
-        print "stock_link: " + stock_link
-        page = requests.get(stock_link)
+        # Check for two different Barron's URLs
+        url = 'http://www.barrons.com/quote/stock/us/xnas/%s' % (self.symbol)
+        page = requests.get(url)
         if page.status_code == 404:
-            stock_link = 'http://www.barrons.com/quote/stock/us/xnys/%s?mod=DNH_S' % (self.symbol)
-        stock_page = urllib2.urlopen(stock_link)
-        self.soup = BeautifulSoup(stock_page, 'html.parser')
+            url = 'http://www.barrons.com/quote/stock/us/xnys/%s?mod=DNH_S' % (self.symbol)
 
+        # Create a new URL request
+        user_agent = 'Mozilla/5.0 (Windows NT 6.1; Win64; x64)'
+        headers = { 'User-Agent' : user_agent }
+        req = urllib2.Request(url, headers=headers)
+
+        # Catch potential URL error
+        try:
+            response = urllib2.urlopen(req)
+        except urllib2.URLError as e:
+            print e.reason
+
+        # Create BeautifulSoup object
+        self.soup = BeautifulSoup(response, 'html.parser')
+
+        # Find stock price
         for a in self.soup.findAll('span', {'class':'market__price'}):
             print a.text
             stock_price_str = a.text.replace(',', '')
@@ -45,11 +63,13 @@ class Stock:
             else:
                 self.stock_price = None
 
+        # Append remaining data
         for a in self.soup.findAll('div', {'class': 'nutrition'}):
             for b in a.findAll('td'):
                 print b.text
                 self.data.append(b.text)
 
+        # Extract remaining data
         self.market_cap = None
         for i in xrange(0, len(self.data)):
             if self.data[i] == 'Market Value':
@@ -72,51 +92,51 @@ class Stock:
                     self.div_amount = None
                     self.div_yield = None
 
-    def display_count(self):
-        print "Total Stocks %d" % Stock.stock_count
-
-    def display_stock(self):
-        print "Company: ", self.company,  ", Ticker Symbol: ", self.symbol
-
-csv.register_dialect(
-    'mydialect',
-    delimiter = ',',
-    quotechar = '"',
-    doublequote = True,
-    skipinitialspace = True,
-    lineterminator = '\r\n',
-    quoting = csv.QUOTE_MINIMAL)
-
-
-
-
-
 class Index:
     'Common base class for all indexes'
     index_count = 0
 
-    def __init__(self, name, index_file=None, index_link=None):
+    def __init__(self, name, index_link):
         self.name = name
-        self.index_file = index_file
+        #self.index_file = index_file
         self.index_link = index_link
         self.index_dict = {}
         self.stock_list = []
         self.stock_data = []
-        self.out_file = '../docs/' + name.lower() + '-dividend-stocks-sorted.csv'
+        self.out_file = 'docs/' + name.lower() + '-dividend-stocks-sorted.csv'
         Index.index_count += 1
 
     def create_dict(self):
         if self.name == 'Nasdaq':
-            with open(self.index_file) as csv_file:
-                read_csv = csv.reader(csv_file, delimiter=',')
-                for row in read_csv:
-                    if row[1].find('iShares') == -1 and row[1].find('iPath') == -1:
-                        self.index_dict[row[0]] = row[1]
-        elif self.name == 'S&P 500':
-            self.index_wiki_page = urllib2.urlopen(self.index_link)
-            self.soup = BeautifulSoup(self.index_wiki_page, 'html.parser')
+            self.create_dict_from_csv()
+        elif self.name == 'S&P 500' or self.name == 'Dow 30':
+            self.create_dict_from_web()
 
-            #Store the list of s&p 500 components in dictionary
+    def create_dict_from_csv(self):
+        with open(self.index_link) as csv_file:
+            read_csv = csv.reader(csv_file, delimiter=',')
+            for row in read_csv:
+                if row[1].find('iShares') == -1 and row[1].find('iPath') == -1:
+                    self.index_dict[row[0]] = row[1]
+
+    def create_dict_from_web(self):
+        # Create a new URL request
+        user_agent = 'Mozilla/5.0 (Windows NT 6.1; Win64; x64)'
+        headers = { 'User-Agent' : user_agent }
+        url = self.index_link
+        req = urllib2.Request(url, headers=headers)
+
+        # Catch potential URL error
+        try:
+            response = urllib2.urlopen(req)
+        except urllib2.URLError as e:
+            print e.reason
+
+        # Create BeautifulSoup object
+        self.soup = BeautifulSoup(response, 'html.parser')
+
+        #store the list of components in a dictionary by ticker symbol
+        if self.name == 'S&P 500':
             for a in self.soup.findAll('table', {'class': 'wikitable sortable'}, limit=1):
                 for b in a.findAll('tr'):
                     count = 1
@@ -126,14 +146,9 @@ class Index:
                             count += 1
                         elif count == 2:
                             company_name = c.text
-                            print 'c.text = ' + c.text
                             self.index_dict[stock_symbol] = company_name
                             count = 1
         elif self.name == 'Dow 30':
-            self.index_wiki_page = urllib2.urlopen(self.index_link)
-            self.soup = BeautifulSoup(self.index_wiki_page, 'html.parser')
-
-            #Store the list of dow 30 components in dictionary
             for a in self.soup.findAll('table', {'class': 'wikitable sortable'}):
                 for b in a.findAll('tr'):
                     count = 1
@@ -164,15 +179,15 @@ class Index:
             new_dict = {}
             new_dict['Company'] = self.stock_list[i].company
             new_dict['Symbol'] = self.stock_list[i].symbol
-            new_dict['Current Price'] = self.stock_list[i].current_price
+            new_dict['Current Price'] = self.stock_list[i].stock_price
             new_dict['Market Cap'] = self.stock_list[i].market_cap
             new_dict['Dividend'] = self.stock_list[i].div_amount
             if self.stock_list[i].div_yield != None:
                 new_dict['Yield'] = str(self.stock_list[i].div_yield) + '%'
             else:
                 new_dict['Yield'] = 'N/A'
-            if myNewStockList[i].returns != None:
-                new_dict['52-Week Return'] = str(self.stock_list[i].returns) + '%'
+            if self.stock_list[i].ytd_net_change != None:
+                new_dict['52-Week Return'] = str(self.stock_list[i].ytd_net_change) + '%'
             else:
                 new_dict['52-Week Return'] = 'None'
             self.stock_data.append(new_dict)
@@ -185,24 +200,24 @@ class Index:
                     writer.writerow(data)
 
         except IOError as (errno, strerror):
-            print("I/O error({0}): {1}".format(errno, strerror))
+            print "I/O error({0}): {1}".format(errno, strerror)
 
 def generate_dividend_stocks():
     #my_stock_symbol_list = []
     #my_stock_list = []
 
-    nasdaq_file = '../docs/dividend-stocks-nasdaq.csv'
-    nasdaq_index = Index('Nasdaq', nasdaq_file)
-    nasdaq_index.create_dict()
-    nasdaq_index.from_dict_to_csv()
+    #nasdaq_file = '../docs/dividend-stocks-nasdaq.csv'
+    #nasdaq_index = Index('Nasdaq', nasdaq_file)
+    #nasdaq_index.create_dict()
+    #nasdaq_index.from_dict_to_csv()
 
-    sp_link = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-    sp_index = Index('S&P 500', sp_link)
-    sp_index.create_dict()
-    sp_index.from_dict_to_csv()
+    #sp_link = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+    #sp_index = Index('S&P 500', sp_link)
+    #sp_index.create_dict()
+    #sp_index.from_dict_to_csv()
 
     dow_link = 'https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average#Components'
-    dow_index = Index('Dow', dow_link)
+    dow_index = Index('Dow 30', dow_link)
     dow_index.create_dict()
     dow_index.from_dict_to_csv()
 
