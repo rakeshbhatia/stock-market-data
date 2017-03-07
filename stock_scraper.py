@@ -1,4 +1,4 @@
-"""Script to collect and present stock market data for Nasdaq, S&P 500, and Dow 30 indexes."""
+"""Program to collect and present stock market data for Nasdaq, S&P 500, and Dow 30 indexes."""
 import os
 import sys
 import math
@@ -6,13 +6,13 @@ import csv
 import time
 import itertools
 import bisect
-import bs4
-from bs4 import BeautifulSoup
 import urllib2
 import urllib
 import string
 import requests
 import random
+import bs4
+from bs4 import BeautifulSoup
 
 csv.register_dialect(
     'mydialect',
@@ -169,6 +169,7 @@ class Index:
             new_stock.query_stock_symbol()
             if new_stock.div_yield != None:
                 self.stock_list.append(new_stock)
+
         #Sort the stock list by yield amount, in desecending order
         self.stock_list.sort(key=lambda stock: stock.div_yield, reverse=True)
 
@@ -203,27 +204,20 @@ class Index:
             print "I/O error({0}): {1}".format(errno, strerror)
 
 def generate_dividend_stocks():
-    #my_stock_symbol_list = []
-    #my_stock_list = []
+    nasdaq_file = '../docs/dividend-stocks-nasdaq.csv'
+    nasdaq_index = Index('Nasdaq', nasdaq_file)
+    nasdaq_index.create_dict()
+    nasdaq_index.from_dict_to_csv()
 
-    #nasdaq_file = '../docs/dividend-stocks-nasdaq.csv'
-    #nasdaq_index = Index('Nasdaq', nasdaq_file)
-    #nasdaq_index.create_dict()
-    #nasdaq_index.from_dict_to_csv()
-
-    #sp_link = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-    #sp_index = Index('S&P 500', sp_link)
-    #sp_index.create_dict()
-    #sp_index.from_dict_to_csv()
+    sp_link = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+    sp_index = Index('S&P 500', sp_link)
+    sp_index.create_dict()
+    sp_index.from_dict_to_csv()
 
     dow_link = 'https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average#Components'
     dow_index = Index('Dow 30', dow_link)
     dow_index.create_dict()
     dow_index.from_dict_to_csv()
-
-    #mySize = len(myStockList)
-    #for i in xrange(0, mySize):
-    #    print 'Company: ' + myStockList[i].company + ' Symbol: ' + myStockList[i].symbol + ' Yield: ' + str(myStockList[i].divYield)
 
 def main():
     generate_dividend_stocks()
